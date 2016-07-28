@@ -95,7 +95,7 @@ function crr_settings_page($form, &$form_state) {
     $line_item_types[$type] = $line_item_type['name'];
   }
 
-  $form['crr_advanced']['commerce_return_request_prodtype'] = array(
+  $form['crr_advanced']['commerce_return_request_li_type'] = array(
     '#type' => 'select',
     '#title' => t('Line Item Types that can be returned.'),
     '#options' => $line_item_types,
