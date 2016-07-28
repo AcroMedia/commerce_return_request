@@ -1,0 +1,7 @@
+name = Commerce Return Request
+description = Provides a simple webform-based workflow for returning products based on line items.
+core = 7.x
+
+dependencies[] = commerce_line_item
+dependencies[] = webform
+dependencies[] = entityreference_autocomplete

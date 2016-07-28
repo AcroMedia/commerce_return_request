@@ -1,0 +1,107 @@
+<?php
+
+/**
+ * @file
+ * Main module file that includes hooks and other implementations.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_return_request_menu() {
+  $items = array();
+  $items['admin/commerce/config/return-request-settings'] = array(
+    'title' => 'Return Request Settings',
+    'description' => 'Configure which product types, line item types, and 
+                      webforms the return request module uses.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('crr_settings_page'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Provides an admin form for updating various settings.
+ *
+ * @param array $form
+ *   The static form array that we are creating.
+ * @param array $form_state
+ *   The state of the form array (changes when form is submitted).
+ *
+ * @return array
+ *   Returns the final $form array completely built, ready for rendering.
+ */
+function crr_settings_page($form, &$form_state) {
+  $form = array();
+
+  // Support either version 3 or 4 of webform.
+  $webform_info = system_get_info('module','webform');
+
+  // Turn 7.x-3.14 into 3 or 7.x-4.11 into 4.
+  $webform_version = array_shift(explode('.',array_pop(explode('-',$webform_info['version']))));
+
+  if ($webform_version > 2) {
+    if ($webform_version == 3) {
+      $bundles = webform_variable_get('webform_node_types');
+    }
+    elseif ($webform_version > 3) {
+      $bundles = webform_node_types();
+    }
+
+    // Select a webform
+    $form['commerce_return_request_li_form'] = array(
+      '#type' => 'entityreference',
+      '#title' => t('Select a form to display when returning an item.'),
+      '#description' => t('You may select only one webform.'),
+      '#required' => TRUE,
+      '#era_entity_type' => 'node',  // Mandatory.
+      '#era_bundles' => $bundles, // Optional (Any bundle by default).
+      '#era_query_settings' => array(
+        'limit' => 25, // Default is 50.
+      ),
+    );
+  } else {
+    $form['commerce_return_request_li_form'] = array(
+      '#markup' => t('Error. Webform\'s version is not compatible. Consider 
+                      upgrading!'),
+    );
+  }
+  
+  // Advanced settings.
+  $form['crr_advanced'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Advanced Returnable Settings'),
+    '#collapsible' => TRUE,
+  );
+
+  $product_types = array();
+  foreach (commerce_product_types() as $type => $product_type) {
+    $product_types[$type] = $product_type['name'];
+  }
+
+  $form['crr_advanced']['commerce_return_request_prodtype'] = array(
+    '#type' => 'select',
+    '#title' => t('Product Types that can be returned.'),
+    '#options' => $product_types,
+    '#default_value' => variable_get('commerce_return_request_prod_type', NULL),
+    '#required' => TRUE,
+  );
+
+  $line_item_types = array();
+  foreach (commerce_line_item_types() as $type => $line_item_type) {
+    $line_item_types[$type] = $line_item_type['name'];
+  }
+
+  $form['crr_advanced']['commerce_return_request_prodtype'] = array(
+    '#type' => 'select',
+    '#title' => t('Line Item Types that can be returned.'),
+    '#options' => $line_item_types,
+    '#default_value' => variable_get('commerce_return_request_li_type', NULL),
+    '#required' => TRUE,
+  );
+
+  return system_settings_form($form);
+}
