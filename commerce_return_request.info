@@ -5,3 +5,7 @@ core = 7.x
 dependencies[] = commerce_line_item
 dependencies[] = webform
 dependencies[] = entityreference_autocomplete
+
+; Views handlers
+files[] = includes/views/commerce_return_request.views.inc
+files[] = includes/views/handlers/commerce_return_request_handler_commerce_line_item_return_link.inc

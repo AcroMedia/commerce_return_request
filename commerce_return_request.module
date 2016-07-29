@@ -57,6 +57,7 @@ function crr_settings_page($form, &$form_state) {
       '#title' => t('Select a form to display when returning an item.'),
       '#description' => t('You may select only one webform.'),
       '#required' => TRUE,
+      '#default_value' => variable_get('commerce_return_request_li_form', NULL),
       '#era_entity_type' => 'node',  // Mandatory.
       '#era_bundles' => $bundles, // Optional (Any bundle by default).
       '#era_query_settings' => array(
@@ -82,12 +83,12 @@ function crr_settings_page($form, &$form_state) {
     $product_types[$type] = $product_type['name'];
   }
 
-  $form['crr_advanced']['commerce_return_request_prodtype'] = array(
-    '#type' => 'select',
+  $form['crr_advanced']['commerce_return_request_prod_type'] = array(
+    '#type' => 'checkboxes',
     '#title' => t('Product Types that can be returned.'),
     '#options' => $product_types,
     '#default_value' => variable_get('commerce_return_request_prod_type', NULL),
-    '#required' => TRUE,
+    '#multiple' => TRUE,
   );
 
   $line_item_types = array();
@@ -96,12 +97,37 @@ function crr_settings_page($form, &$form_state) {
   }
 
   $form['crr_advanced']['commerce_return_request_li_type'] = array(
-    '#type' => 'select',
+    '#type' => 'checkboxes',
     '#title' => t('Line Item Types that can be returned.'),
     '#options' => $line_item_types,
     '#default_value' => variable_get('commerce_return_request_li_type', NULL),
-    '#required' => TRUE,
+    '#multiple' => TRUE,
   );
 
+  $order_statuses = array();
+  foreach (commerce_order_statuses() as $name => $status) {
+    $order_statuses[$name] = ucfirst($status['state']) . ': ' . $status['title'];
+  }
+  sort($order_statuses);
+
+  $form['crr_advanced']['commerce_return_request_order_statuses'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Order Statuses that can be returned.'),
+    '#options' => $order_statuses,
+    '#default_value' => variable_get('commerce_return_request_order_statuses', NULL),
+    '#multiple' => TRUE,
+  );
+
+
   return system_settings_form($form);
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function commerce_return_request_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'commerce_return_request') . '/includes/views',
+  );
 }
