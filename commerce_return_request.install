@@ -1,0 +1,36 @@
+<?php
+
+/**
+ * @file
+ * Schema definitions and update hooks for the Commerce Return Request module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_return_request_schema() {
+  $schema['commerce_return_request_submission'] = array(
+    'fields' => array(
+      'crr_id' => array(
+        'description' => 'Simple auto-increment id.',
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'sid' => array(
+        'description' => 'Webform submission id.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'line_item_id' => array(
+        'description' => 'Commerce Line Item id.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('crr_id'),
+  );
+  
+  return $schema;
+}

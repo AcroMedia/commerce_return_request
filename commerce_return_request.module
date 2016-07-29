@@ -26,6 +26,13 @@ function commerce_return_request_menu() {
     'access callback' => 'commerce_order_customer_order_view_access',
     'access arguments' => array(3),
   );
+  $items['user/%user/orders/%commerce_order/return/submission/%'] = array(
+    'page callback' => 'ccr_return_li_form_submission',
+    'page arguments' => array(6),
+    'type' => MENU_CALLBACK,
+    'access callback' => 'commerce_order_customer_order_view_access',
+    'access arguments' => array(3),
+  );
 
   return $items;
 }
@@ -132,24 +139,120 @@ function crr_settings_page($form, &$form_state) {
 /**
  * Page callback for rendering a webform on a user account page.
  *
- * @param object $user
- *   A fully loaded user object.
- * @param object $order
- *   A fully loaded order object.
- * @param object $line_item
- *   A fully loaded line item object.
- *
  * @return array
  *   An array as expected by drupal_render().
  */
-function ccr_return_li_form_view($user, $order, $line_item) {
+function ccr_return_li_form_view() {
   $line_item_form = variable_get("commerce_return_request_li_form");
   $line_item_form_obj = node_load($line_item_form['entity_id']);
   return node_view($line_item_form_obj);
 }
 
 /**
- * Implementation of hook_views_api().
+ * Implements hook_form_BASE_FORM_ID_alter().
+ */
+function commerce_return_request_form_webform_client_form_alter(&$form, &$form_state, $form_id) {
+  $form_id_nid = array_pop(explode("_",$form_id));
+  $form_line_item = variable_get('commerce_return_request_li_form');
+  if ($form_id_nid == $form_line_item['entity_id']) {
+    // If we are on the user account page, utilize page args (& verify them).
+    $args = arg();
+    if ($args[0] == "user" && $args[2] == "orders" && $args[4] == "return") {
+      $user = user_load(intval($args[1]));
+      $order = commerce_order_load(intval($args[3]));
+      $line_item = commerce_line_item_load(intval($args[5]));
+
+      if (_crr_can_be_returned($order, $line_item)) {
+        // See if return on this line item already exists.
+        $sids = _crr_lineitem_submission($line_item->line_item_id);
+        if (count($sids) > 0) {
+          $sid = $sids[0];
+          $message = t('This product has a request that was <a href="@url">already submitted</a>.',
+                        array("@url"=>"submission/" . $sid));
+          $form['warning'] = array(
+            "#markup" => '<div class="messages warning">' . $message . '</div>',
+            '#weight' => -9999,
+          );
+        } 
+        else {
+          dpm($form);
+
+          // Submit form on behalf of the Order owner and not the user.
+          $form['details']['uid']['#value'] = $args[1];
+        }
+      }
+    }
+  }
+}
+
+/**
+ *
+ */
+function ccr_return_li_form_submission($sid) {
+  module_load_include('inc', 'webform', 'includes/webform.components');
+  $form_line_item = variable_get('commerce_return_request_li_form');
+  $node = node_load($form_line_item['entity_id']);
+  $submission = webform_menu_submission_load($sid, $node->id);
+  $render_array = webform_submission_page($node, $submission, "display");
+  unset($render_array['#submission_navigation']);
+  return $render_array;
+}
+
+/**
+ * Looks for a submission on this line item.
+ *
+ * @param int $line_item_id
+ *   Simple identifier of the line item.
+ *
+ * @return array
+ */
+function _crr_lineitem_submission($line_item_id) {
+  $sids = db_select('commerce_return_request_submission', 'crr')
+    ->fields('crr', array('crr_id'))
+    ->condition('line_item_id', $line_item_id)
+    ->execute()
+    ->fetchCol();
+  return $sids;
+}
+
+/**
+ * Enforces the return settings.
+ *
+ * @param object $order
+ *   Full Commerce Order object.
+ * @param object $line_item
+ *   Full Commerce Line Item.
+ *
+ * @return bool
+ */
+function _crr_can_be_returned($order, $line_item) {
+  $allowed_status = variable_get('commerce_return_request_order_statuses');
+
+  // Step 1) Determine if order is in the right status
+  if (in_array($order->status, $allowed_status)) {
+
+    // Step 2) Determine if line item is can be returned.
+    $allowed_li_types = variable_get('commerce_return_request_li_type');
+    if (in_array($line_item->type, $allowed_li_types)) {
+
+      // Step 3) Determine if product type is allowed to be returnable.
+      // @todo Make this product id location more stable.
+      // @todo Use entity meta data wrappers.
+      $product = commerce_product_load($line_item->commerce_product['und'][0]['product_id']);
+      $allowed_prod_types = variable_get('commerce_return_request_prod_type');
+      if (in_array($product->type, $allowed_prod_types)) {
+
+        // Step 4) Return true
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Implements hook_views_api().
  */
 function commerce_return_request_views_api() {
   return array(
