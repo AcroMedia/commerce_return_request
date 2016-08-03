@@ -51,39 +51,20 @@ function commerce_return_request_menu() {
 function crr_settings_page($form, &$form_state) {
   $form = array();
 
-  // Support either version 3 or 4 of webform.
-  $webform_info = system_get_info('module','webform');
-
-  // Turn 7.x-3.14 into 3 or 7.x-4.11 into 4.
-  $webform_version = array_shift(explode('.',array_pop(explode('-',$webform_info['version']))));
-
-  if ($webform_version > 2) {
-    if ($webform_version == 3) {
-      $bundles = webform_variable_get('webform_node_types');
-    }
-    elseif ($webform_version > 3) {
-      $bundles = webform_node_types();
-    }
-
-    // Select a webform
-    $form['commerce_return_request_li_form'] = array(
-      '#type' => 'entityreference',
-      '#title' => t('Select a form to display when returning an item.'),
-      '#description' => t('You may select only one webform.'),
-      '#required' => TRUE,
-      '#default_value' => variable_get('commerce_return_request_li_form', NULL),
-      '#era_entity_type' => 'node',  // Mandatory.
-      '#era_bundles' => $bundles, // Optional (Any bundle by default).
-      '#era_query_settings' => array(
-        'limit' => 25, // Default is 50.
-      ),
-    );
-  } else {
-    $form['commerce_return_request_li_form'] = array(
-      '#markup' => t('Error. Webform\'s version is not compatible. Consider 
-                      upgrading!'),
-    );
-  }
+  $bundles = webform_node_types();
+  // Select a webform
+  $form['commerce_return_request_li_form'] = array(
+    '#type' => 'entityreference',
+    '#title' => t('Select a form to display when returning an item.'),
+    '#description' => t('You may select only one webform.'),
+    '#required' => TRUE,
+    '#default_value' => variable_get('commerce_return_request_li_form', NULL),
+    '#era_entity_type' => 'node',  // Mandatory.
+    '#era_bundles' => $bundles, // Optional (Any bundle by default).
+    '#era_query_settings' => array(
+      'limit' => 25, // Default is 50.
+    ),
+  );
   
   // Advanced settings.
   $form['crr_advanced'] = array(
@@ -158,7 +139,6 @@ function commerce_return_request_form_webform_client_form_alter(&$form, &$form_s
     // If we are on the user account page, utilize page args (& verify them).
     $args = arg();
     if ($args[0] == "user" && $args[2] == "orders" && $args[4] == "return") {
-      $user = user_load(intval($args[1]));
       $order = commerce_order_load(intval($args[3]));
       $line_item = commerce_line_item_load(intval($args[5]));
 
@@ -168,15 +148,10 @@ function commerce_return_request_form_webform_client_form_alter(&$form, &$form_s
         if (count($sids) > 0) {
           $sid = $sids[0];
           $message = t('This product has a request that was <a href="@url">already submitted</a>.',
-                        array("@url"=>"submission/" . $sid));
-          $form['warning'] = array(
-            "#markup" => '<div class="messages warning">' . $message . '</div>',
-            '#weight' => -9999,
-          );
+            array("@url"=>"submission/" . $sid));
+          drupal_set_message($message,'warning');
         } 
         else {
-          dpm($form);
-
           // Submit form on behalf of the Order owner and not the user.
           $form['details']['uid']['#value'] = $args[1];
         }
@@ -186,16 +161,38 @@ function commerce_return_request_form_webform_client_form_alter(&$form, &$form_s
 }
 
 /**
+ * Renders a submission for display.
  *
+ * @param integer $sid
+ *   Requires a submission id.
+ *
+ * @return array
+ *   Returns an array that can be render()'ed.
  */
 function ccr_return_li_form_submission($sid) {
-  module_load_include('inc', 'webform', 'includes/webform.components');
   $form_line_item = variable_get('commerce_return_request_li_form');
-  $node = node_load($form_line_item['entity_id']);
-  $submission = webform_menu_submission_load($sid, $node->id);
+  $node = node_load(intval($form_line_item['entity_id']));
+  $submission = webform_menu_submission_load(intval($sid), $node->nid);
   $render_array = webform_submission_page($node, $submission, "display");
   unset($render_array['#submission_navigation']);
   return $render_array;
+}
+
+/**
+ * Looks for a line item using an sid.
+ *
+ * @param int $sid
+ *   Simple identifier of the line item.
+ *
+ * @return array
+ */
+function _crr_sid_to_lineitem($sid) {
+  $line_item_id = db_select('commerce_return_request_submission', 'crr')
+    ->fields('crr', array('line_item_id'))
+    ->condition('sid', $sid)
+    ->execute()
+    ->fetchField();
+  return $line_item_id;
 }
 
 /**
@@ -210,9 +207,97 @@ function _crr_lineitem_submission($line_item_id) {
   $sids = db_select('commerce_return_request_submission', 'crr')
     ->fields('crr', array('crr_id'))
     ->condition('line_item_id', $line_item_id)
+    ->orderBy('sid','DESC') // grab the newest submission
     ->execute()
     ->fetchCol();
   return $sids;
+}
+
+/**
+ * Implements hook_webform_submission_delete().
+ */
+function commerce_return_request_webform_submission_delete($node, $submission) {
+  // Delete our database entry if the submission is deleted.
+  db_delete('commerce_return_request_submission')
+    ->condition('sid', $submission->sid)
+    ->execute();
+}
+
+/**
+ * Implements hook_webform_submission_insert().
+ */
+function commerce_return_request_webform_submission_insert($node, $submission) {
+  $args = arg();
+  // Ugly, requires a url argument to make this work.
+  if ($args[0] == "user" && $args[2] == "orders" && $args[4] == "return") {
+    db_insert('commerce_return_request_submission')
+      ->fields(array(
+        'sid' => $submission->sid,
+        'line_item_id' => intval($args[5]),
+      ))
+      ->execute();
+
+    drupal_set_message(t("Your return has been requested! We will be in touch."));
+    drupal_goto('user/' . $args[1] . '/orders/' . $args[3]);
+  }
+}
+
+/**
+ * Implements hook_webform_submission_render_alter().
+ *
+ * @see commerce_return_request_webform_submission_insert()
+ * @see ccr_return_li_form_submission()
+ */
+function commerce_return_request_webform_submission_render_alter(&$renderable) {
+  if ($renderable['#submission'] || (arg(0) == "user" && arg(5) == "submission")) {
+
+    $sid = $renderable['#submission']->sid;
+    if ($sid == FALSE && arg(0) == "user" && arg(5) == "submission") {
+      $sid = intval(arg(6));
+    }
+
+    // Locate the line item id based on the submission id.
+    $line_item_id = _crr_sid_to_lineitem($sid);
+    if ($line_item_id) {
+      $line_item = commerce_line_item_load($line_item_id);
+      $line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
+      $product = $line_item_wrapper->commerce_product;
+      $title = $product->title->value();
+      $sku = $product->sku->value();
+      $order = commerce_order_load(intval($line_item->order_id));
+      $customer = user_load($order->uid);
+      $line_item_total_price = $line_item_wrapper->commerce_total->amount->value();
+      $line_item_total_price = commerce_currency_format($line_item_total_price, $line_item->commerce_total[LANGUAGE_NONE][0]['currency_code']);
+      $price = $line_item_total_price;
+
+      // @todo Make this a proper theme.
+      $markup = <<<TAG
+<table>
+  <thead>
+    <tr>
+      <th>Product to be returned</th>
+      <th>Quantity</th>
+      <th>Price</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>$title (SKU: $sku)</td>
+      <td>$line_item->quantity</td>
+      <td>$price</td>
+    </tr>
+  </tbody>
+</table>
+TAG;
+
+      $renderable['crr_line_item'] = array(
+        "#type" => "markup",
+        "#markup" => $markup,
+      );
+    }
+  } else {
+    drupal_set_message(t('Submission could not be loaded.'),"warning");
+  }
 }
 
 /**
