@@ -196,12 +196,32 @@ function _crr_sid_to_lineitem($sid) {
 }
 
 /**
+ * Looks for an sid using a line item.
+ *
+ * @param int $line_item_id
+ *   Simple identifier of the line item.
+ *
+ * @return array
+ *   List of submission ids.
+ */
+function _crr_lineitem_to_sid($line_item_id) {
+  $sids = db_select('commerce_return_request_submission', 'crr')
+    ->fields('crr', array('sid'))
+    ->condition('line_item_id', $line_item_id)
+    ->orderBy('sid','DESC') // grab the newest submission
+    ->execute()
+    ->fetchCol();
+  return $sids;
+}
+
+/**
  * Looks for a submission on this line item.
  *
  * @param int $line_item_id
  *   Simple identifier of the line item.
  *
  * @return array
+ *   List of crr_ids that match the line item id.
  */
 function _crr_lineitem_submission($line_item_id) {
   $sids = db_select('commerce_return_request_submission', 'crr')
@@ -217,10 +237,20 @@ function _crr_lineitem_submission($line_item_id) {
  * Implements hook_webform_submission_delete().
  */
 function commerce_return_request_webform_submission_delete($node, $submission) {
+  $continue = true;
+
+  // Allow other modules to control the delete.
+  drupal_alter("commerce_return_request_delete_alter", $continue, $submission);
+
   // Delete our database entry if the submission is deleted.
-  db_delete('commerce_return_request_submission')
-    ->condition('sid', $submission->sid)
-    ->execute();
+  if ($continue) {
+    db_delete('commerce_return_request_submission')
+      ->condition('sid', $submission->sid)
+      ->execute();
+  }
+
+  // Allow other modules to act.
+  module_invoke_all("commerce_return_request_delete", $node, $submission);
 }
 
 /**
@@ -228,17 +258,36 @@ function commerce_return_request_webform_submission_delete($node, $submission) {
  */
 function commerce_return_request_webform_submission_insert($node, $submission) {
   $args = arg();
+
+  drupal_alter("commerce_return_request_insert_alter", $node, $submission, $args);
+
   // Ugly, requires a url argument to make this work.
   if ($args[0] == "user" && $args[2] == "orders" && $args[4] == "return") {
-    db_insert('commerce_return_request_submission')
+    $crr_id = db_insert('commerce_return_request_submission')
       ->fields(array(
         'sid' => $submission->sid,
         'line_item_id' => intval($args[5]),
       ))
       ->execute();
 
-    drupal_set_message(t("Your return has been requested! We will be in touch."));
-    drupal_goto('user/' . $args[1] . '/orders/' . $args[3]);
+    $message = t("Your return has been requested! We will be in touch.");
+
+    // Allow customization of the insert message.
+    drupal_alter("commerce_return_request_insert_message_alter",$message);
+
+    module_invoke_all("commerce_return_request_insert", $crr_id, $node, $submission, $args);
+
+    if ($message) {
+      drupal_set_message($message);
+    }
+
+    // Allow customization of the redirect.
+    $path = 'user/' . $args[1] . '/orders/' . $args[3];
+    drupal_alter("commerce_return_request_insert_redirect_alter", $path, $args);
+
+    if ($path) {
+      drupal_goto('user/' . $args[1] . '/orders/' . $args[3]);
+    }
   }
 }
 
@@ -249,11 +298,15 @@ function commerce_return_request_webform_submission_insert($node, $submission) {
  * @see ccr_return_li_form_submission()
  */
 function commerce_return_request_webform_submission_render_alter(&$renderable) {
-  if ($renderable['#submission'] || (arg(0) == "user" && arg(5) == "submission")) {
+  $args = arg();
+
+  drupal_alter("commerce_return_request_submission_pre_render_alter", $renderable, $args);
+
+  if ($renderable['#submission'] || ($args[0] == "user" && $args[5] == "submission")) {
 
     $sid = $renderable['#submission']->sid;
-    if ($sid == FALSE && arg(0) == "user" && arg(5) == "submission") {
-      $sid = intval(arg(6));
+    if ($sid == FALSE && $args[0] == "user" && $args[5] == "submission") {
+      $sid = intval($args[6]);
     }
 
     // Locate the line item id based on the submission id.
@@ -294,6 +347,8 @@ TAG;
         "#type" => "markup",
         "#markup" => $markup,
       );
+
+      drupal_alter("commerce_return_request_submission_post_render_alter", $renderable, $args);
     }
   } else {
     drupal_set_message(t('Submission could not be loaded.'),"warning");

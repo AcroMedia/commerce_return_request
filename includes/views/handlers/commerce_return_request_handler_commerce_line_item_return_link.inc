@@ -15,7 +15,9 @@ class commerce_return_request_handler_commerce_line_item_return_link extends vie
   function option_definition() {
     $options = parent::option_definition();
     $options['text'] = array('default' => 'Return Requested', 'translatable' => TRUE);
-    $options['text'] = array('default' => 'View Return Request', 'translatable' => TRUE);
+    $options['text_classes'] = array('default' => 'request-create', 'translatable' => FALSE);
+    $options['text_view'] = array('default' => 'View Return Request', 'translatable' => TRUE);
+    $options['text_view_classes'] = array('default' => 'request-view', 'translatable' => FALSE);
     return $options;
   }
 
@@ -25,10 +27,20 @@ class commerce_return_request_handler_commerce_line_item_return_link extends vie
       '#title' => t('Text for Return Link'),
       '#default_value' => $this->options['text'],
     );
+    $form['text_classes'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Classes for above link'),
+      '#default_value' => $this->options['text_classes'],
+    );
     $form['text_view'] = array(
       '#type' => 'textfield',
-      '#title' => t('Text for Return Link'),
+      '#title' => t('Text for View Return Request Link'),
       '#default_value' => $this->options['text_view'],
+    );
+    $form['text_view_classes'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Classes for above link'),
+      '#default_value' => $this->options['text_view_classes'],
     );
     parent::options_form($form, $form_state);
 
@@ -43,17 +55,29 @@ class commerce_return_request_handler_commerce_line_item_return_link extends vie
       // Create path and send to order owner's return form.
       if (_crr_can_be_returned($order, $line_item)) {
         // Determine if a return exists.
-        $sids = _crr_lineitem_submission($line_item->line_item_id);
+        $sids = _crr_lineitem_to_sid($line_item->line_item_id);
         if (!empty($sids)) {
           $path = '/user/' . $order->uid . '/orders/' . $order->order_number . '/return/submission/' . $sids[0];
-//          return l($this->options['text_view'], $path);
-          return l("View Return Request", $path);
+          // Give it a class and allow html (for easy icons)
+          $options = array(
+            "attributes" => array(
+              "class" => $this->options['text_view_classes'],
+            ),
+            "html" => true,
+          );
+          return l($this->options['text_view'], $path, $options);
 
         }
         else {
           // Else allow them to return it.
           $path = '/user/' . $order->uid . '/orders/' . $order->order_number . '/return/' . $line_item->line_item_id;
-          return l($this->options['text'], $path);
+          $options = array(
+            "attributes" => array(
+              "class" => $this->options['text_classes'],
+            ),
+            "html" => true,
+          );
+          return l($this->options['text'], $path, $options);
         }
       }
     }
